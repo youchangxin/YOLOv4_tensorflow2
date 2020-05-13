@@ -7,9 +7,9 @@ from config import cfg
 NUM_CLASS = 20 #len(cfg.YOLO.CLASSES)
 
 
-class YOLO_V4(tf.keras.Model):
+class YOLOV4(tf.keras.Model):
     def __init__(self):
-        super(YOLO_V4, self).__init__()
+        super(YOLOV4, self).__init__()
         out_shape = 3 * (5 + NUM_CLASS)
         self.backbone = CSPDarkNet53()
         self.spp = SPP()
@@ -37,12 +37,8 @@ class YOLO_V4(tf.keras.Model):
 
         route_large = self.merge_l(route_medial, route_large, training=training)
         yolo_large = self.linear_l(route_large, training=training)
-        print(yolo_small)
-        print(yolo_medial)
-        print(yolo_large)
+
         return yolo_small, yolo_medial, yolo_large
 
 
-model = YOLO_V4()
-model.build(input_shape=(None, 512, 512, 3))
-model.summary()
+

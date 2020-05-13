@@ -47,8 +47,28 @@ class Conv2d(tf.keras.layers.Layer):
         return x
 
 
-class CSP_Block(tf.keras.layers.Layer):
+def build_Res_block(filters, repeat_num):
+    block = tf.keras.Sequential()
+    for _ in range(repeat_num):
+        block.add(CSP_Res(filters=filters))
+    return block
 
+
+class CSP_Res(tf.keras.layers.Layer):
+    def __init__(self, filters):
+        super(CSP_Res, self).__init__()
+        self.conv1 = Conv2d(filters=filters, kernel=(1, 1), stride=1)
+        self.conv2 = Conv2d(filters=filters, kernel=(3, 3), stride=1)
+
+    def call(self, inputs, training=False, **kwargs):
+        x = self.conv1(inputs, training=training)
+        x = self.conv2(x, training=training)
+        output = tf.keras.layers.Add()([inputs, x])
+
+        return output
+
+
+class CSP_Block(tf.keras.layers.Layer):
     def __init__(self, num_filters, num_iter, allow_narrow=True):
         '''
         :param num_filters: number of filter
@@ -56,33 +76,31 @@ class CSP_Block(tf.keras.layers.Layer):
         :param allow_narrow: Boolean value; True: halves num_filter  False: spilt_filter=num_filter
         '''
         super(CSP_Block, self).__init__()
-        self.num_iter = num_iter
         split_filters = num_filters // 2 if allow_narrow else num_filters
         self.zeropadding = tf.keras.layers.ZeroPadding2D(padding=((1, 0), (1, 0)))
         self.preconv = Conv2d(filters=num_filters, kernel=(3, 3), stride=2)
-
+        self.res_block = build_Res_block(filters=split_filters, repeat_num=num_iter)
         self.shortconv = Conv2d(filters=split_filters, kernel=(1, 1), stride=1)
         self.mainconv = Conv2d(filters=split_filters, kernel=(1, 1), stride=1)
-
-        self.subconv1 = Conv2d(filters=split_filters, kernel=(1, 1), stride=1)
-        self.subconv2 = Conv2d(filters=split_filters, kernel=(3, 3), stride=1)
 
         self.postconv = Conv2d(filters=split_filters, kernel=(3, 3), stride=1)
 
         self.transition = Conv2d(filters=num_filters, kernel=(1, 1), stride=1)
+
+    def build_res_block(self):
+        block = tf.keras.Sequential()
+        for _ in range(self.num_iter):
+            block.add(self.subconv1())
+            block.add(self.subconv2())
+        return block
 
     def call(self, inputs, training=False, **kwargs):
         # x = self.zeropadding(inputs)
         x = self.preconv(inputs, training=training)
         shortcut = self.shortconv(x, training=training)
         mainsteam = self.mainconv(x, training=training)
-
-        for i in range(self.num_iter):
-            x = self.subconv1(mainsteam, training=training)
-            x = self.subconv2(x, training=training)
-            mainsteam = tf.keras.layers.Add()([mainsteam, x])
-
-        mainsteam = self.postconv(mainsteam, training=training)
+        res = self.res_block(mainsteam)
+        mainsteam = self.postconv(res, training=training)
         outputs = tf.keras.layers.Concatenate()([mainsteam, shortcut])
         outputs = self.transition(outputs, training=training)
 
@@ -92,17 +110,17 @@ class CSP_Block(tf.keras.layers.Layer):
 class SPP(tf.keras.layers.Layer):
     def __init__(self):
         super(SPP, self).__init__()
-        self.conv1 = Conv2d(filters=512, kernel=(1, 1), stride=1)
-        self.conv2 = Conv2d(filters=1024, kernel=(3, 3), stride=1)
+        self.conv1 = Conv2d(filters=512, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv2 = Conv2d(filters=1024, kernel=(3, 3), stride=1, activation='LeakRelu')
         # MaxPool section
         self.maxpool_5 = tf.keras.layers.MaxPool2D(pool_size=(5, 5), strides=1, padding='same')
         self.maxpool_9 = tf.keras.layers.MaxPool2D(pool_size=(9, 9), strides=1, padding='same')
         self.maxpool_13 = tf.keras.layers.MaxPool2D(pool_size=(13, 13), strides=1, padding='same')
 
-        self.conv3 = Conv2d(filters=512, kernel=(1, 1), stride=1)
-        self.conv4 = Conv2d(filters=512, kernel=(1, 1), stride=1)
-        self.conv5 = Conv2d(filters=1024, kernel=(3, 3), stride=1)
-        self.conv6 = Conv2d(filters=512, kernel=(1, 1), stride=1)
+        self.conv3 = Conv2d(filters=512, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv4 = Conv2d(filters=512, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv5 = Conv2d(filters=1024, kernel=(3, 3), stride=1, activation='LeakRelu')
+        self.conv6 = Conv2d(filters=512, kernel=(1, 1), stride=1, activation='LeakRelu')
 
     def call(self, inputs, training=False, **kwargs):
         x = self.conv1(inputs, training=training)
@@ -124,14 +142,14 @@ class SPP(tf.keras.layers.Layer):
 class Upper_Concate(tf.keras.layers.Layer):
     def __init__(self, num_filter1, num_filter2):
         super(Upper_Concate, self).__init__()
-        self.conv1 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
-        self.conv2 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
+        self.conv1 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv2 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
         self.upsamp = tf.keras.layers.UpSampling2D()
-        self.conv3 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
-        self.conv4 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1)
-        self.conv5 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
-        self.conv6 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1)
-        self.conv7 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
+        self.conv3 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv4 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1, activation='LeakRelu')
+        self.conv5 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv6 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1, activation='LeakRelu')
+        self.conv7 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
 
     def call(self, input1, input2, training=False, **kwargs):
         x1 = self.conv1(input1, training=training)
@@ -150,12 +168,12 @@ class Upper_Concate(tf.keras.layers.Layer):
 class Merge(tf.keras.layers.Layer):
     def __init__(self, num_filter1, num_filter2):
         super(Merge, self).__init__()
-        self.conv = Conv2d(filters=num_filter1, kernel=(3, 3), stride=2)
-        self.conv1 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
-        self.conv2 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1)
-        self.conv3 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
-        self.conv4 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1)
-        self.conv5 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1)
+        self.conv = Conv2d(filters=num_filter1, kernel=(3, 3), stride=2, activation='LeakRelu')
+        self.conv1 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv2 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1, activation='LeakRelu')
+        self.conv3 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
+        self.conv4 = Conv2d(filters=num_filter2, kernel=(3, 3), stride=1, activation='LeakRelu')
+        self.conv5 = Conv2d(filters=num_filter1, kernel=(1, 1), stride=1, activation='LeakRelu')
 
     def call(self, input1, input2, training=False, **kwargs):
         x1 = self.conv(input1, training=training)
@@ -172,7 +190,7 @@ class Merge(tf.keras.layers.Layer):
 class Linear(tf.keras.layers.Layer):
     def __init__(self, num_filter1, num_filter2):
         super(Linear, self).__init__()
-        self.conv1 = Conv2d(filters=num_filter1, kernel=(3, 3), stride=1)
+        self.conv1 = Conv2d(filters=num_filter1, kernel=(3, 3), stride=1, activation='LeakRelu')
         self.conv2 = Conv2d(filters=num_filter2, kernel=(1, 1), stride=1, activation='Linear')
 
     def call(self, inputs, training=False, **kwargs):
