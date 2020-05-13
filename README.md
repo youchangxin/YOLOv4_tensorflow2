@@ -55,7 +55,7 @@ A minimal TensorFlow2.x implementation of YOLOv4.
 ### Otimization
 - [ ] Multi-input weighted residual connections (MiWRC)
 - [ ] Eliminate grid sensitivity
-- [ ] Cosine annealing scheduler
+- [x] Cosine annealing scheduler
 - [ ] kmeans
 - [ ] DIoU-NMS
 ### Loss
