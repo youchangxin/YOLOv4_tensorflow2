@@ -61,9 +61,9 @@ class YOLO_Kmeans:
         row = np.shape(data)[0]
         for i in range(row):
             if i == 0:
-                x_y = "%d,%d" % (data[i][0], data[i][1])
+                x_y = "%f,%f" % (data[i][0], data[i][1])
             else:
-                x_y = ", %d,%d" % (data[i][0], data[i][1])
+                x_y = ", %f,%f" % (data[i][0], data[i][1])
             f.write(x_y)
         f.close()
 
@@ -87,10 +87,14 @@ class YOLO_Kmeans:
         all_boxes = self.txt2boxes()
         result = self.kmeans(all_boxes, k=self.cluster_number)
         result = result[np.lexsort(result.T[0, None])]
-        self.result2txt(result)
+
         print("K anchors:\n {}".format(result))
-        print("Accuracy: {:.2f}%".format(
-            self.avg_iou(all_boxes, result) * 100))
+        print("Accuracy: {:.2f}%".format(self.avg_iou(all_boxes, result) * 100))
+        result = result.astype(np.float)
+        result[0:3, :] = result[0:3, :] / 13.0
+        result[3:6, :] = result[3:6, :] / 26.0
+        result[6:9, :] = result[6:9, :] / 52.0
+        self.result2txt(result)
 
 
 if __name__ == "__main__":
