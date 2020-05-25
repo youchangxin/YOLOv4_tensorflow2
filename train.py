@@ -32,6 +32,7 @@ NUM_CLASS = len(cfg.YOLO.CLASSES)
 STRIDES = np.array(cfg.YOLO.STRIDES)
 IOU_LOSS_THRESH = cfg.YOLO.IOU_LOSS_THRESH
 ANCHORS = preprocess.get_anchors(cfg.YOLO.ANCHORS)
+latest_epoch = 0
 global_steps = tf.Variable(initial_value=1, trainable=False, dtype=tf.int64)
 
 
@@ -44,9 +45,14 @@ model = YOLOV4()
 model.build(input_shape=(None, cfg.TRAIN.INPUT_SIZE, cfg.TRAIN.INPUT_SIZE, 3))
 model.summary()
 
+'''
 if os.listdir('./saved_weights'):
     latest_weight = tf.train.latest_checkpoint('./saved_weights')
+    latest_epoch = (latest_weight.split('-')[-1]) + 1
     model.load_weights(latest_weight)
+    global_steps.assign(steps_per_epoch * latest_epoch)
+'''
+
 
 optimizer = tf.keras.optimizers.Adam()
 
@@ -93,11 +99,11 @@ def train_step(img, target, epoch):
 
 
 if __name__ == '__main__':
-    for epoch in range(EPOCHS):
+    for epoch in range(latest_epoch, EPOCHS):
         for image_data, target in trainset:
             train_step(image_data, target, epoch)
             # save model weights
         if (epoch+1) % save_frequency == 0:
             model.save_weights(filepath=cfg.YOLO.SAVE_MODEL_DIR + "YOLOv4_epoch-{}".format(epoch), save_format="tf")
 
-        model.save_weights(filepath="/saved_model", save_format="h5")
+        model.save_weights(filepath='yolov4', save_format="h5")

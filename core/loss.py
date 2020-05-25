@@ -6,10 +6,12 @@ from config import cfg
 from utils.preprocess import get_anchors
 from utils.iou import bbox_ciou, bbox_iou, bbox_giou
 
+
 NUM_CLASS = len(cfg.YOLO.CLASSES)
 STRIDES = np.array(cfg.YOLO.STRIDES)
 ANCHORS = get_anchors(cfg.YOLO.ANCHORS)
 IOU_LOSS_THRESH = cfg.YOLO.IOU_LOSS_THRESH
+XYSCALE = cfg.YOLO.XYSCALE
 
 
 def decode(conv_outputs):
@@ -29,25 +31,27 @@ def decode(conv_outputs):
         xy_grid = tf.tile(tf.expand_dims(xy_grid, axis=0), [batch_size, 1, 1, 3, 1])
         xy_grid = tf.cast(xy_grid, tf.float32)
 
-        pred_xy = (tf.sigmoid(conv_raw_dxdy) + xy_grid) * STRIDES[i]
+        pred_xy = ((tf.sigmoid(conv_raw_dxdy) * XYSCALE[i]) - 0.5 * (XYSCALE[i] - 1) + xy_grid) * STRIDES[i]
         pred_wh = tf.exp(conv_raw_dwdh) * ANCHORS[i]
         max_scale = tf.cast(output_size * STRIDES[i], dtype=tf.float32)
+
         pred_wh = tf.clip_by_value(pred_wh, clip_value_min=0.0, clip_value_max=max_scale)
         pred_xywh = tf.concat([pred_xy, pred_wh], axis=-1)
+        pred_conf = tf.sigmoid(conv_raw_conf)
+        pred_prob = tf.sigmoid(conv_raw_prob)
 
-        decoded_fm.append(tf.concat([pred_xywh, conv_raw_conf, conv_raw_prob], axis=-1))
+        decoded_fm.append(tf.concat([pred_xywh, pred_conf, pred_prob], axis=-1))
     return decoded_fm
 
 
-def yolov4_loss(pred, label, bboxes, i=0):
+def yolov4_loss(pred, label, bboxes, i=0, eps=1e-15):
     conv_shape = tf.shape(pred)
     output_size = conv_shape[1]
     input_size = output_size * STRIDES[i]
 
-    pred_xywh = pred[:, :, :, :, 0:4]
-    raw_conf  = pred[:, :, :, :, 4:5]
-    pred_conf = tf.sigmoid(raw_conf)
-    raw_prob  = pred[:, :, :, :, 5: ]
+    pred_xywh  = pred[:, :, :, :, 0:4]
+    pred_conf  = pred[:, :, :, :, 4:5]
+    pred_prob  = pred[:, :, :, :, 5: ]
 
     label_xywh   = label[:, :, :, :, 0:4]
     respond_bbox = label[:, :, :, :, 4:5]
@@ -69,12 +73,13 @@ def yolov4_loss(pred, label, bboxes, i=0):
     conf_focal = tf.pow(respond_bbox - pred_conf, 2)
     # Focal Loss, 通过修改标准的交叉熵损失函数，降低对能够很好分类样本的权重
     conf_loss = conf_focal * (
-            respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=raw_conf)
+            respond_bbox * -(respond_bbox * tf.math.log(tf.clip_by_value(pred_conf, eps, 1.0)))
             +
-            respond_bgd * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=raw_conf)
-    )
-
-    prob_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=raw_prob)
+            respond_bgd * -(respond_bgd * tf.math.log(tf.clip_by_value((1- pred_conf), eps, 1.0)))
+            )
+    prob_loss = respond_bbox * -(label_prob * tf.math.log(tf.clip_by_value(pred_prob, eps, 1.0))
+                                 +
+                                 (1 - label_prob) * tf.math.log(tf.clip_by_value((1 - pred_prob), eps, 1.0)))
 
     # 将各部分损失值的和，除以均值，累加，作为最终的图片损失值
     ciou_loss = tf.reduce_mean(tf.reduce_sum(ciou_loss, axis=[1, 2, 3, 4]))
@@ -82,4 +87,3 @@ def yolov4_loss(pred, label, bboxes, i=0):
     prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1, 2, 3, 4]))
 
     return ciou_loss, conf_loss, prob_loss
-
