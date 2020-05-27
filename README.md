@@ -47,7 +47,7 @@ A minimal TensorFlow2.x implementation of YOLOv4.
 ### Model
 - [x] Cross-stage partial Net (CSP-DarkNet53)
 - [x] Mish-activation
-- [ ] DropBlock regularization
+- [x] DropBlock regularization
 - [x] SPP-block
 - [ ] SAM-block
 - [x] PAN block
@@ -57,7 +57,7 @@ A minimal TensorFlow2.x implementation of YOLOv4.
 - [ ] Eliminate grid sensitivity
 - [x] Cosine annealing scheduler
 - [ ] kmeans
-- [ ] DIoU-NMS
+- [x] DIoU-NMS
 ### Loss
 - [x] Class label smoothing
 - [x] CIoU loss
