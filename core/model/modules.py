@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 import tensorflow_addons as tfa
+from core.model.dropblock import DropBlock2D
 
 
 class BatchNormalization(tf.keras.layers.BatchNormalization):
@@ -59,10 +60,12 @@ class CSP_Res(tf.keras.layers.Layer):
         super(CSP_Res, self).__init__()
         self.conv1 = Conv2d(filters=filters, kernel=(1, 1), stride=1)
         self.conv2 = Conv2d(filters=filters, kernel=(3, 3), stride=1)
+        self.dropblock = DropBlock2D(keep_prob=0.9, block_size=3)
 
-    def call(self, inputs, training=False, **kwargs):
+    def call(self, inputs, training=None, **kwargs):
         x = self.conv1(inputs, training=training)
         x = self.conv2(x, training=training)
+        x = self.dropblock(x, training=training)
         output = tf.keras.layers.Add()([inputs, x])
 
         return output
@@ -86,13 +89,6 @@ class CSP_Block(tf.keras.layers.Layer):
         self.postconv = Conv2d(filters=split_filters, kernel=(3, 3), stride=1)
 
         self.transition = Conv2d(filters=num_filters, kernel=(1, 1), stride=1)
-
-    def build_res_block(self):
-        block = tf.keras.Sequential()
-        for _ in range(self.num_iter):
-            block.add(self.subconv1())
-            block.add(self.subconv2())
-        return block
 
     def call(self, inputs, training=False, **kwargs):
         # x = self.zeropadding(inputs)
